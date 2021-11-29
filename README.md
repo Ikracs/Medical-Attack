@@ -1,4 +1,4 @@
-# medical_attack
+# Improved Adaptive Square Attack
 This is the implementation of "Query-based Black-box Attack against Medical Image Segmentation Model".
 
 ### Requirements
