@@ -1,3 +1,4 @@
+import os
 import torch
 import numpy as np
 import pandas as pd
@@ -106,35 +107,38 @@ class SegModel(SegmentationAgent):
             chn_mean.append(inputs.mean(dim=(2, -1), keepdim=True))
             chn_std.append(inputs.std(dim=(2, -1), keepdim=True))
         
-        self.chn_mean = torch.cat(chn_mean)
-        self.chn_std  = torch.cat(chn_std)
+        self.chn_m = torch.cat(chn_mean)
+        self.chn_s = torch.cat(chn_std)
 
     def infer_and_get_loss(self, imgs):
         class_num  = self.config['network']['class_num']
         
-        loss_list, dice_list = [], []
+        loss_list, ASR = [], []
         for batch_id, data in enumerate(self.test_loder):
             nnum  = data['image'].shape[0]
-            bsize = self.config['dataset']['test_batch_size'] 
+            bsize = self.test_loder.batch_size
             start_id = batch_id * bsize; end_id = start_id + nnum
             # suppose the target model is trained on normalized images
             img = imgs[start_id: end_id]
-            chn_mean = self.chn_mean[start_id: end_id]
-            chn_std  =  self.chn_std[start_id: end_id]
+            chn_m = self.chn_m[start_id: end_id]
+            chn_s = self.chn_s[start_id: end_id]
             
             inputs = self.convert_tensor_type(img).to(self.device)
-            labels_prob = self.convert_tensor_type(data['label_prob']).to(self.device)
+            labels = self.convert_tensor_type(data['label_prob']).to(self.device)
             
-            inputs = (inputs - chn_mean) / chn_std
-            outputs = self.net(inputs)
-            loss = self.get_loss_value(data, inputs, outputs, labels_prob)
+            outputs = self.net((inputs - chn_m) / chn_s)
+            loss = self.get_loss_value(data, inputs, outputs, labels)
             
             outputs_argmax = torch.argmax(outputs, dim=1, keepdim=True)
             soft_out = get_soft_label(outputs_argmax, class_num, self.tensor_type)
-            dice     = get_classwise_dice(soft_out, labels_prob)
-            loss_list.append(loss); dice_list.append(dice)
-        # return: loss of each img (1-D Tensor), average Dice (2-D Tensor)
-        return torch.cat(loss_list, dim=0), torch.cat(dice_list, dim=0)
+            fail_num = (soft_out[:, 1] * labels[:, 1]).sum(dim=(1, -1))
+            asr = 1 - fail_num / labels[:, 1].sum(dim=(1, -1))
+            loss_list.append(loss); ASR.append(asr)
+        return torch.cat(loss_list, dim=0), torch.cat(ASR, dim=0)
+
+    def freeze_parameters(self):
+        for param in self.net.parameters():
+            param.requires_grad_(False)
 
     def get_img_and_gt(self):
         img_list, gt_list = [], []
@@ -147,6 +151,8 @@ class SegModel(SegmentationAgent):
     def save_perturbation(self, perbs):
         perb_dir     = self.config['attacking']['perb_dir']
         raw_data_csv = self.config['dataset']['raw_data']
+
+        if not os.path.exists(perb_dir): os.makedirs(perb_dir)
         
         csv_item = pd.read_csv(raw_data_csv)
         for idx in range(perbs.shape[0]):
@@ -161,6 +167,9 @@ class SegModel(SegmentationAgent):
         raw_data_csv = self.config['dataset']['raw_data']
         output_dir   = self.config['testing']['output_dir']
 
+        if not os.path.exists(adv_img_dir): os.makedirs(adv_img_dir)
+        if not os.path.exists(output_dir): os.makedirs(output_dir)
+
         csv_item = pd.read_csv(raw_data_csv)
         for idx in range(imgs.shape[0]):
             name = csv_item.iloc[idx, 0].split('/')[-1]
@@ -171,8 +180,8 @@ class SegModel(SegmentationAgent):
             save_array_as_rgb_image(img, img_name)
 
             inputs = self.convert_tensor_type(imgs[idx: idx + 1]).to(self.device)
-            chn_mean = self.chn_mean[idx: idx + 1]
-            chn_std  = self.chn_std[idx: idx + 1]
+            chn_mean = self.chn_m[idx: idx + 1]
+            chn_std  = self.chn_s[idx: idx + 1]
             inputs = (inputs - chn_mean) / chn_std
 
             output = torch.argmax(self.net(inputs)[0], dim=0) * 255
