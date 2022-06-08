@@ -1,8 +1,8 @@
 # Improved Adaptive Square Attack
-This is the implementation of "*Query-based Black-box Attack against Medical Image Segmentation Model*", which has been accpeted by **FGCS, 2022**
+This is the implementation of "*Query-based Black-box Attack against Medical Image Segmentation Model*", which has been accpeted by **FGCS, 2022**.
 
 ### Abstract
-With the extensive deployment of deep learning, the research on \emph{adversarial example} receives more concern than ever before.
+With the extensive deployment of deep learning, the research on *adversarial example* receives more concern than ever before.
 By modifying a small fraction of the original image, an adversary can lead a well-trained model to make a wrong prediction.
 However, existing works about adversarial attack and defense mainly focus on image classification but pay little attention to more practical tasks like segmentation.
 In this work, we propose a query-based black-box attack that could alter the classes of foreground pixels within a limited query budget.
